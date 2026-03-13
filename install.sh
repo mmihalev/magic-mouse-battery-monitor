@@ -21,7 +21,7 @@ RELEASE_MANIFEST_URL="https://raw.githubusercontent.com/mmihalev/magic-mouse-bat
 
 DEFAULT_THRESHOLDS="20,15,10"
 DEFAULT_INTERVAL=600  # 10 minutes
-DEFAULT_AUTO_UPDATE_CHECK=1
+DEFAULT_AUTO_UPDATE_CHECK=0
 DEFAULT_UPDATE_CHECK_INTERVAL=86400
 
 get_installed_version() {
@@ -251,7 +251,7 @@ cat > "$SCRIPT_PATH" << 'EOF'
 SCRIPT_VERSION="__SCRIPT_VERSION__"
 BATTERY_THRESHOLDS=${BATTERY_THRESHOLDS:-"20,15,10"}
 STATE_DIR="/tmp/magic-mouse-battery-monitor"
-AUTO_UPDATE_CHECK=${AUTO_UPDATE_CHECK:-"1"}
+AUTO_UPDATE_CHECK=${AUTO_UPDATE_CHECK:-"0"}
 UPDATE_CHECK_INTERVAL=${UPDATE_CHECK_INTERVAL:-86400}
 RELEASE_MANIFEST_URL="https://raw.githubusercontent.com/mmihalev/magic-mouse-battery-monitor/main/.release-please-manifest.json"
 UPDATE_CHECK_STATE_FILE="$STATE_DIR/update-last-check"
