@@ -47,6 +47,9 @@ The background timer is managed via a macOS LaunchAgent. To configure the thresh
 | **Update Check Interval** | `UPDATE_CHECK_INTERVAL` | `86400` | `21600` |
 | **Interval** | `StartInterval` | `600` (10 min) | `300` (5 min) |
 
+Threshold behavior: notifications trigger when battery is **at or below** a threshold at check time.  
+Example: with threshold `91`, if a mouse goes from `92%` to `89%` between checks, it still notifies at `89%`.
+
 After editing the file, reload the LaunchAgent to apply the changes:
 ```bash
 launchctl unload ~/Library/LaunchAgents/com.user.magic-mouse-battery-monitor.plist
