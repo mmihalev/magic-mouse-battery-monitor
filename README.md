@@ -1,5 +1,8 @@
 # Magic Mouse Battery Monitor
 
+[![release-please](https://github.com/mmihalev/magic-mouse-battery-monitor/actions/workflows/release-please.yml/badge.svg)](https://github.com/mmihalev/magic-mouse-battery-monitor/actions/workflows/release-please.yml)
+[![Update Checksum](https://github.com/mmihalev/magic-mouse-battery-monitor/actions/workflows/update-checksum.yml/badge.svg)](https://github.com/mmihalev/magic-mouse-battery-monitor/actions/workflows/update-checksum.yml)
+
 A modern macOS automation that monitors **all connected Bluetooth mice** and sends notifications as they drop through configurable thresholds (e.g., 20% → 15% → 10%).
 
 *Tested on macOS 26.3.1*
