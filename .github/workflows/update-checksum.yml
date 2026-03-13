@@ -18,23 +18,15 @@ jobs:
   update-checksum:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
     steps:
       - uses: actions/checkout@v4
-      - name: Validate checksum (PR)
-        if: github.event_name == 'pull_request'
+      - name: Validate checksum
         run: |
           sha256sum install.sh > /tmp/install.sh.sha256
-          diff -u install.sh.sha256 /tmp/install.sh.sha256
-      - name: Generate Checksum
-        if: github.event_name == 'push'
-        run: |
-          sha256sum install.sh > install.sh.sha256
-      - name: Commit and Push
-        if: github.event_name == 'push'
-        run: |
-          git config --global user.name 'github-actions[bot]'
-          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          git add install.sh.sha256
-          git commit -m "chore: update install.sh checksum" || exit 0
-          git push
+          if ! diff -u install.sh.sha256 /tmp/install.sh.sha256; then
+            echo ""
+            echo "install.sh.sha256 is out of date."
+            echo "Run: shasum -a 256 install.sh > install.sh.sha256"
+            exit 1
+          fi
