@@ -5,6 +5,11 @@
 
 A modern macOS automation that monitors **all connected Bluetooth mice** and sends notifications as they drop through configurable thresholds (e.g., 20% → 15% → 10%).
 
+This exists for one reason: losing your mouse in the middle of important work is painful.  
+Getting a warning at 5% is often just a countdown to frustration, not a helpful alert.  
+macOS does not provide a native way to choose battery notification thresholds for mice, so this script fills that gap.  
+Think of it as a tiny battery assistant that nags you early enough to be useful (and hopefully before your mouse decides to take an unscheduled nap).
+
 *Tested on macOS 26.3.1*
 
 It integrates neatly with the **macOS Shortcuts app**, allowing manual checks via Spotlight/Siri while a background LaunchAgent automatically triggers it every 10 minutes.
