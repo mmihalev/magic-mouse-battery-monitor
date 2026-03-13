@@ -44,7 +44,7 @@ To install, simply run:
 
 During installation, the script will:
 1. Extract the core battery checker logic and save it to `~/.local/bin/magic-mouse-battery-monitor.sh`.
-2. Open Shortcuts.app and provide instructions (with a pre-copied command) to create the "Mouse Battery Monitor" shortcut.
+2. Open Shortcuts.app and provide instructions to create/update the "Mouse Battery Monitor" shortcut.
 3. Automatically generate and load the background macOS `LaunchAgent` to run the shortcut automatically every 10 minutes.
 
 ## Configuration
@@ -69,7 +69,22 @@ launchctl load ~/Library/LaunchAgents/com.user.magic-mouse-battery-monitor.plist
 
 ## Manual Checks
 
-Since the checking logic is wrapped in a macOS Shortcut, you can trigger a battery check at any time directly:
+Run the script directly for a human-readable status view:
+```bash
+~/.local/bin/magic-mouse-battery-monitor.sh
+```
+This shows:
+- installed version
+- update status
+- currently configured thresholds/check intervals
+- connected mice and their battery levels
+
+To run the actual notification monitoring loop (used by the Shortcut/LaunchAgent):
+```bash
+~/.local/bin/magic-mouse-battery-monitor.sh monitor
+```
+
+You can still trigger checks from the "Mouse Battery Monitor" Shortcut directly:
 - Using Spotlight (`Cmd + Space` → Type "Mouse Battery Monitor" and press Enter)
 - Ask Siri ("Run Mouse Battery Monitor")
 - Using the Shortcuts menu bar icon.

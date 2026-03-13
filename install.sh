@@ -257,6 +257,7 @@ UPDATE_CHECK_INTERVAL=${UPDATE_CHECK_INTERVAL:-86400}
 RELEASE_MANIFEST_URL="https://raw.githubusercontent.com/mmihalev/magic-mouse-battery-monitor/main/.release-please-manifest.json"
 UPDATE_CHECK_STATE_FILE="$STATE_DIR/update-last-check"
 UPDATE_NOTIFIED_VERSION_FILE="$STATE_DIR/update-last-notified-version"
+MONITOR_INTERVAL_SECONDS="unknown"
 
 mkdir -p "$STATE_DIR"
 
@@ -355,13 +356,14 @@ fi
 # Refresh runtime settings from LaunchAgent when running manually so update
 # command reflects current configured values instead of shell defaults.
 load_settings_from_launchagent() {
-    local plist_path thresholds auto_update update_interval
+    local plist_path thresholds auto_update update_interval start_interval
     plist_path="$HOME/Library/LaunchAgents/com.user.magic-mouse-battery-monitor.plist"
     [ -f "$plist_path" ] || return
 
     thresholds=$(/usr/libexec/PlistBuddy -c "Print :EnvironmentVariables:BATTERY_THRESHOLDS" "$plist_path" 2>/dev/null || true)
     auto_update=$(/usr/libexec/PlistBuddy -c "Print :EnvironmentVariables:AUTO_UPDATE_CHECK" "$plist_path" 2>/dev/null || true)
     update_interval=$(/usr/libexec/PlistBuddy -c "Print :EnvironmentVariables:UPDATE_CHECK_INTERVAL" "$plist_path" 2>/dev/null || true)
+    start_interval=$(/usr/libexec/PlistBuddy -c "Print :StartInterval" "$plist_path" 2>/dev/null || true)
 
     if [ -n "$thresholds" ]; then
         BATTERY_THRESHOLDS="$thresholds"
@@ -371,6 +373,9 @@ load_settings_from_launchagent() {
     fi
     if [[ "$update_interval" =~ ^[0-9]+$ ]]; then
         UPDATE_CHECK_INTERVAL="$update_interval"
+    fi
+    if [[ "$start_interval" =~ ^[0-9]+$ ]]; then
+        MONITOR_INTERVAL_SECONDS="$start_interval"
     fi
 }
 
@@ -441,8 +446,6 @@ auto_check_for_updates() {
     echo "$latest" > "$UPDATE_NOTIFIED_VERSION_FILE"
 }
 
-auto_check_for_updates
-
 get_connected_mice() {
     python3 << 'PYEOF'
 import json, subprocess, sys
@@ -480,41 +483,126 @@ get_battery_by_address() {
     done < <(ioreg -r -k "BatteryPercent" -d 1 | grep -E '"DeviceAddress"|"BatteryPercent"')
 }
 
-IFS=',' read -ra thresholds <<< "$BATTERY_THRESHOLDS"
-max_threshold=0
-for t in "${thresholds[@]}"; do
-    t=$(echo "$t" | tr -d ' ')
-    [ "$t" -gt "$max_threshold" ] && max_threshold=$t
-done
+run_monitor() {
+    auto_check_for_updates
 
-battery_data=$(get_battery_by_address)
-
-get_connected_mice | while IFS='|' read -r name address; do
-    norm_addr=$(echo "$address" | tr '-' ':' | tr '[:lower:]' '[:upper:]')
-    battery=$(echo "$battery_data" | grep -F "$norm_addr|" | cut -d'|' -f2 | head -n1)
-
-    if [ -z "$battery" ]; then continue; fi
-
-    safe_addr=$(echo "$norm_addr" | tr ':' '_')
-    state_file="$STATE_DIR/$safe_addr"
-
-    notified=""
-    [ -f "$state_file" ] && notified=$(cat "$state_file")
-
-    if [ "$battery" -gt "$max_threshold" ]; then
-        rm -f "$state_file"
-        continue
-    fi
-
+    IFS=',' read -ra thresholds <<< "$BATTERY_THRESHOLDS"
+    max_threshold=0
     for t in "${thresholds[@]}"; do
         t=$(echo "$t" | tr -d ' ')
-        echo "$notified" | grep -qw "$t" && continue
-        if [ "$battery" -le "$t" ]; then
-            osascript -e "display notification \"${name} battery is at ${battery}% (threshold: ${t}%). Please charge it soon.\" with title \"🪫 ${name} Battery Low\" sound name \"Sosumi\""
-            echo "$t" >> "$state_file"
-        fi
+        [ "$t" -gt "$max_threshold" ] && max_threshold=$t
     done
-done
+
+    battery_data=$(get_battery_by_address)
+
+    while IFS='|' read -r name address; do
+        norm_addr=$(echo "$address" | tr '-' ':' | tr '[:lower:]' '[:upper:]')
+        battery=$(echo "$battery_data" | grep -F "$norm_addr|" | cut -d'|' -f2 | head -n1)
+
+        if [ -z "$battery" ]; then continue; fi
+
+        safe_addr=$(echo "$norm_addr" | tr ':' '_')
+        state_file="$STATE_DIR/$safe_addr"
+
+        notified=""
+        [ -f "$state_file" ] && notified=$(cat "$state_file")
+
+        if [ "$battery" -gt "$max_threshold" ]; then
+            rm -f "$state_file"
+            continue
+        fi
+
+        for t in "${thresholds[@]}"; do
+            t=$(echo "$t" | tr -d ' ')
+            echo "$notified" | grep -qw "$t" && continue
+            if [ "$battery" -le "$t" ]; then
+                osascript -e "display notification \"${name} battery is at ${battery}% (threshold: ${t}%). Please charge it soon.\" with title \"🪫 ${name} Battery Low\" sound name \"Sosumi\""
+                echo "$t" >> "$state_file"
+            fi
+        done
+    done < <(get_connected_mice)
+}
+
+show_status() {
+    local latest is_newer line_count pretty_thresholds auto_update_label
+    pretty_thresholds=$(echo "$BATTERY_THRESHOLDS" | sed 's/[[:space:]]//g; s/,/% -> /g')
+    pretty_thresholds="${pretty_thresholds}%"
+    if [ "$AUTO_UPDATE_CHECK" = "1" ]; then
+        auto_update_label="Enabled"
+    else
+        auto_update_label="Disabled"
+    fi
+
+    echo "Magic Mouse Battery Monitor"
+    echo "Version: $SCRIPT_VERSION"
+    echo "Thresholds: $pretty_thresholds"
+    echo "Check interval: ${MONITOR_INTERVAL_SECONDS}s"
+    echo "Auto update check: $auto_update_label"
+    echo "Update check interval: ${UPDATE_CHECK_INTERVAL}s"
+    echo ""
+
+    latest=$(get_latest_release_version || true)
+    if [ -n "$latest" ]; then
+        is_newer=$(is_version_newer "$latest" "$SCRIPT_VERSION")
+        if [ "$is_newer" = "1" ]; then
+            echo "Update available: $latest"
+            echo "Run: ~/.local/bin/magic-mouse-battery-monitor.sh update"
+        else
+            echo "Update status: up to date ($latest)"
+        fi
+    else
+        echo "Update status: unavailable (network issue)"
+    fi
+
+    echo ""
+    echo "Connected mice battery levels:"
+    battery_data=$(get_battery_by_address)
+    line_count=0
+    while IFS='|' read -r name address; do
+        norm_addr=$(echo "$address" | tr '-' ':' | tr '[:lower:]' '[:upper:]')
+        battery=$(echo "$battery_data" | grep -F "$norm_addr|" | cut -d'|' -f2 | head -n1)
+        if [ -n "$battery" ]; then
+            echo "- $name ($norm_addr): ${battery}%"
+        else
+            echo "- $name ($norm_addr): battery unavailable"
+        fi
+        line_count=$((line_count + 1))
+    done < <(get_connected_mice)
+
+    if [ "$line_count" -eq 0 ]; then
+        echo "- No connected Bluetooth mice found."
+    fi
+}
+
+show_help() {
+    echo "Usage: magic-mouse-battery-monitor.sh [command]"
+    echo ""
+    echo "Commands:"
+    echo "  status            Show version, config, update status, and current mouse batteries (default)"
+    echo "  monitor           Run background monitoring and send low-battery notifications"
+    echo "  update            Update installer/script to latest version"
+    echo "  version, --version, -v"
+    echo "                    Show installed script version"
+    echo "  help, --help, -h  Show this help message"
+}
+
+case "$1" in
+    ""|status)
+        show_status
+        ;;
+    monitor)
+        run_monitor
+        ;;
+    help|--help|-h)
+        show_help
+        ;;
+    *)
+        echo "Unknown command: $1"
+        echo ""
+        show_help
+        exit 1
+        ;;
+esac
 EOF
 
 sed -i '' "s/__SCRIPT_VERSION__/$SCRIPT_VERSION/g" "$SCRIPT_PATH"
@@ -564,7 +652,7 @@ if [ "$REFRESH_SHORTCUT" = "1" ]; then
 				<key>UUID</key>
 				<string>\$(uuidgen)</string>
 				<key>Script</key>
-				<string>/bin/bash "$SCRIPT_PATH"</string>
+				<string>/bin/bash "$SCRIPT_PATH" monitor</string>
 			</dict>
 		</dict>
 	</array>
