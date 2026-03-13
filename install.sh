@@ -27,11 +27,16 @@ echo ""
 
 # Ask for settings during new installations (skip during automated updates)
 if [ "$1" != "update" ]; then
-    echo "⚙️  Configuration (Press Enter to use defaults):"
-    
+    echo "⚙️  Configuration (Press Enter at any step to use the default settings)"
+    echo ""
+    echo "   At what battery levels would you like to be notified?"
+    echo "   (Example: '20,15,10' means you get an alert at 20%, again at 15%, etc.)"
     read -p "   Battery thresholds (default: $DEFAULT_THRESHOLDS): " USER_THRESHOLDS
     USER_THRESHOLDS=${USER_THRESHOLDS:-$DEFAULT_THRESHOLDS}
     
+    echo ""
+    echo "   How often should the background task silently check your mouse?"
+    echo "   (Example: 600 seconds = 10 minutes)"
     read -p "   Check interval in seconds (default: $DEFAULT_INTERVAL): " USER_INTERVAL
     if [[ ! "$USER_INTERVAL" =~ ^[0-9]+$ ]]; then
         USER_INTERVAL=$DEFAULT_INTERVAL
