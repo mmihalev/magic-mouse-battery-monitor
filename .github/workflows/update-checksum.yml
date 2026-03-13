@@ -22,16 +22,22 @@ jobs:
   update-checksum:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
     steps:
       - uses: actions/checkout@v4
         with:
-          # For PRs, check out the source branch so we can auto-commit fixes.
-          ref: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref }}
-      - name: Validate or Auto-Fix checksum
-        env:
-          IS_SAME_REPO_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository }}
+          fetch-depth: 0
+      - name: Validate checksum
         run: |
+          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then
+            BASE_SHA="${{ github.event.pull_request.base.sha }}"
+            HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+            if ! git diff --name-only "$BASE_SHA" "$HEAD_SHA" | grep -qx "install.sh"; then
+              echo "install.sh was not changed in this PR; skipping checksum enforcement."
+              exit 0
+            fi
+          fi
+
           sha256sum install.sh > /tmp/install.sh.sha256
           if diff -u install.sh.sha256 /tmp/install.sh.sha256; then
             echo "Checksum is up to date."
@@ -40,19 +46,5 @@ jobs:
 
           echo ""
           echo "install.sh.sha256 is out of date."
-
-          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ] && [ "${IS_SAME_REPO_PR}" = "true" ]; then
-            cp /tmp/install.sh.sha256 install.sh.sha256
-            git config --global user.name 'github-actions[bot]'
-            git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-            git add install.sh.sha256
-            git commit -m "chore: update install.sh checksum" || exit 0
-            # Rebase in case another run updated the branch first.
-            git pull --rebase origin "${GITHUB_HEAD_REF}"
-            git push
-            echo "Checksum auto-updated on PR branch."
-            exit 0
-          fi
-
           echo "Run: shasum -a 256 install.sh > install.sh.sha256"
           exit 1
