@@ -6,6 +6,13 @@ on:
       - main
     paths:
       - 'install.sh'
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
 
 jobs:
   update-checksum:
@@ -14,10 +21,17 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+      - name: Validate checksum (PR)
+        if: github.event_name == 'pull_request'
+        run: |
+          sha256sum install.sh > /tmp/install.sh.sha256
+          diff -u install.sh.sha256 /tmp/install.sh.sha256
       - name: Generate Checksum
+        if: github.event_name == 'push'
         run: |
           sha256sum install.sh > install.sh.sha256
       - name: Commit and Push
+        if: github.event_name == 'push'
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
