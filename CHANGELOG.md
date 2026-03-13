@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.2.1](https://github.com/mmihalev/magic-mouse-battery-monitor/compare/v1.2.0...v1.2.1) (2026-03-13)
+
+
+### Code Refactoring
+
+* rename the core script from `check_magic_mouse_battery.sh` to `magic-mouse-battery-monitor.sh` and update all related references. ([96d6e6a](https://github.com/mmihalev/magic-mouse-battery-monitor/commit/96d6e6a8b51f40bfc59167dfce72dab210ec3513))
+
+
+### Documentation
+
+* Clarify project motivation and problem statement in README. ([efc1aa6](https://github.com/mmihalev/magic-mouse-battery-monitor/commit/efc1aa673ce04c14e6a810402eb7a936a4ec0bd4))
+* curl install example ([61be9f5](https://github.com/mmihalev/magic-mouse-battery-monitor/commit/61be9f5b1868a020043e3e93a923a77f903d007a))
+
 ## [1.2.0](https://github.com/mmihalev/magic-mouse-battery-monitor/compare/v1.1.0...v1.2.0) (2026-03-13)
 
 
