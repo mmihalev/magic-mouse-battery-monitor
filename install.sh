@@ -16,35 +16,226 @@ SCRIPT_PATH="$INSTALL_DIR/check_magic_mouse_battery.sh"
 PLIST_NAME="com.user.magic-mouse-battery-monitor.plist"
 PLIST_DEST="$HOME/Library/LaunchAgents/$PLIST_NAME"
 SHORTCUT_NAME="Mouse Battery Monitor"
+SCRIPT_VERSION="1.1.0"
+RELEASE_MANIFEST_URL="https://raw.githubusercontent.com/mmihalev/magic-mouse-battery-monitor/main/.release-please-manifest.json"
 
 DEFAULT_THRESHOLDS="20,15,10"
 DEFAULT_INTERVAL=600  # 10 minutes
+DEFAULT_AUTO_UPDATE_CHECK=1
+DEFAULT_UPDATE_CHECK_INTERVAL=86400
+
+get_installed_version() {
+    if [ -f "$SCRIPT_PATH" ]; then
+        awk -F'"' '/^SCRIPT_VERSION="/ { print $2; exit }' "$SCRIPT_PATH"
+    fi
+}
+
+get_latest_release_version() {
+    curl -fsSL "$RELEASE_MANIFEST_URL" 2>/dev/null | python3 -c '
+import json, sys
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    sys.exit(1)
+v = data.get(".")
+if isinstance(v, str) and v.strip():
+    print(v.strip())
+'
+}
+
+is_version_newer() {
+    python3 - "$1" "$2" << 'PYEOF'
+import re, sys
+latest = sys.argv[1]
+current = sys.argv[2]
+
+def parse(v):
+    base = re.split(r"[-+]", v, maxsplit=1)[0]
+    parts = [int(p) for p in base.split(".") if p.isdigit()]
+    return tuple(parts)
+
+try:
+    print(1 if parse(latest) > parse(current) else 0)
+except Exception:
+    print(0)
+PYEOF
+}
+
+read_existing_settings() {
+    local existing_thresholds existing_interval existing_auto_update_check existing_update_check_interval
+    EXISTING_SETTINGS_FOUND=0
+    existing_thresholds=""
+    existing_interval=""
+    existing_auto_update_check=""
+    existing_update_check_interval=""
+    if [ -f "$PLIST_DEST" ]; then
+        EXISTING_SETTINGS_FOUND=1
+        existing_thresholds=$(/usr/libexec/PlistBuddy -c "Print :EnvironmentVariables:BATTERY_THRESHOLDS" "$PLIST_DEST" 2>/dev/null || true)
+        existing_interval=$(/usr/libexec/PlistBuddy -c "Print :StartInterval" "$PLIST_DEST" 2>/dev/null || true)
+        existing_auto_update_check=$(/usr/libexec/PlistBuddy -c "Print :EnvironmentVariables:AUTO_UPDATE_CHECK" "$PLIST_DEST" 2>/dev/null || true)
+        existing_update_check_interval=$(/usr/libexec/PlistBuddy -c "Print :EnvironmentVariables:UPDATE_CHECK_INTERVAL" "$PLIST_DEST" 2>/dev/null || true)
+    fi
+
+    if [ -n "$existing_thresholds" ]; then
+        USER_THRESHOLDS="$existing_thresholds"
+    else
+        USER_THRESHOLDS="$DEFAULT_THRESHOLDS"
+    fi
+
+    if [[ "$existing_interval" =~ ^[0-9]+$ ]]; then
+        USER_INTERVAL="$existing_interval"
+    else
+        USER_INTERVAL="$DEFAULT_INTERVAL"
+    fi
+
+    if [ "$existing_auto_update_check" = "0" ] || [ "$existing_auto_update_check" = "1" ]; then
+        USER_AUTO_UPDATE_CHECK="$existing_auto_update_check"
+    else
+        USER_AUTO_UPDATE_CHECK="$DEFAULT_AUTO_UPDATE_CHECK"
+    fi
+
+    if [[ "$existing_update_check_interval" =~ ^[0-9]+$ ]]; then
+        USER_UPDATE_CHECK_INTERVAL="$existing_update_check_interval"
+    else
+        USER_UPDATE_CHECK_INTERVAL="$DEFAULT_UPDATE_CHECK_INTERVAL"
+    fi
+
+    # Prefer explicit values passed by the updater script, when available.
+    if [ -n "${MMBM_USER_THRESHOLDS:-}" ]; then
+        USER_THRESHOLDS="$MMBM_USER_THRESHOLDS"
+    fi
+    if [[ "${MMBM_USER_INTERVAL:-}" =~ ^[0-9]+$ ]]; then
+        USER_INTERVAL="$MMBM_USER_INTERVAL"
+    fi
+    if [ "${MMBM_USER_AUTO_UPDATE_CHECK:-}" = "0" ] || [ "${MMBM_USER_AUTO_UPDATE_CHECK:-}" = "1" ]; then
+        USER_AUTO_UPDATE_CHECK="$MMBM_USER_AUTO_UPDATE_CHECK"
+    fi
+    if [[ "${MMBM_USER_UPDATE_CHECK_INTERVAL:-}" =~ ^[0-9]+$ ]]; then
+        USER_UPDATE_CHECK_INTERVAL="$MMBM_USER_UPDATE_CHECK_INTERVAL"
+    fi
+}
+
+INSTALLED_VERSION=$(get_installed_version)
+LATEST_RELEASE_VERSION=$(get_latest_release_version || true)
 
 echo ""
 echo "🪫 Installing Magic Mouse Battery Monitor"
 echo "═══════════════════════════════════════════"
+if [ -n "$INSTALLED_VERSION" ]; then
+    if [ "$INSTALLED_VERSION" = "$SCRIPT_VERSION" ]; then
+        echo "   Reinstalling version: $SCRIPT_VERSION"
+    else
+        echo "   Installed script version: $INSTALLED_VERSION"
+        echo "   Version to install: $SCRIPT_VERSION"
+        echo "   Updating: $INSTALLED_VERSION -> $SCRIPT_VERSION"
+    fi
+else
+    echo "   Installed script version: not found"
+    echo "   Version to install: $SCRIPT_VERSION"
+fi
+if [ -n "$LATEST_RELEASE_VERSION" ]; then
+    if [ "$LATEST_RELEASE_VERSION" = "$SCRIPT_VERSION" ]; then
+        echo "   Latest available version: $LATEST_RELEASE_VERSION (up to date)"
+    elif [ "$(is_version_newer "$LATEST_RELEASE_VERSION" "$SCRIPT_VERSION")" = "1" ]; then
+        echo "   Latest available version: $LATEST_RELEASE_VERSION (newer than this installer)"
+    else
+        echo "   Latest available version: $LATEST_RELEASE_VERSION"
+    fi
+else
+    echo "   Latest available version: unavailable (network issue)"
+fi
 echo ""
 
-# Ask for settings during new installations (skip during automated updates)
-if [ "$1" != "update" ]; then
-    echo "⚙️  Configuration (Press Enter at any step to use the default settings)"
+# Ask for settings during new installations. During updates, preserve current
+# settings by default and optionally let the user change them.
+if [ "$1" = "update" ]; then
+    read_existing_settings
+    echo "🔄 Update mode detected."
+    echo "   Current thresholds: $USER_THRESHOLDS"
+    echo "   Current interval: $USER_INTERVAL seconds"
+    echo "   Current automatic update checks: $USER_AUTO_UPDATE_CHECK"
+    echo "   Current update check interval: $USER_UPDATE_CHECK_INTERVAL seconds"
+    read -p "   Keep current settings? [Y/n]: " KEEP_SETTINGS
+    if [ "$KEEP_SETTINGS" = "n" ] || [ "$KEEP_SETTINGS" = "N" ]; then
+        echo ""
+        echo "⚙️  Configuration (Press Enter at any step to keep current values)"
+        echo ""
+        read -p "   Battery thresholds (current: $USER_THRESHOLDS): " NEW_THRESHOLDS
+        USER_THRESHOLDS=${NEW_THRESHOLDS:-$USER_THRESHOLDS}
+        echo ""
+        read -p "   Check interval in seconds (current: $USER_INTERVAL): " NEW_INTERVAL
+        if [[ "$NEW_INTERVAL" =~ ^[0-9]+$ ]]; then
+            USER_INTERVAL=$NEW_INTERVAL
+        fi
+        echo ""
+        read -p "   Automatic update checks 1=enabled, 0=disabled (current: $USER_AUTO_UPDATE_CHECK): " NEW_AUTO_UPDATE_CHECK
+        if [ "$NEW_AUTO_UPDATE_CHECK" = "0" ] || [ "$NEW_AUTO_UPDATE_CHECK" = "1" ]; then
+            USER_AUTO_UPDATE_CHECK=$NEW_AUTO_UPDATE_CHECK
+        fi
+        echo ""
+        read -p "   Update check interval in seconds (current: $USER_UPDATE_CHECK_INTERVAL): " NEW_UPDATE_CHECK_INTERVAL
+        if [[ "$NEW_UPDATE_CHECK_INTERVAL" =~ ^[0-9]+$ ]]; then
+            USER_UPDATE_CHECK_INTERVAL=$NEW_UPDATE_CHECK_INTERVAL
+        fi
+        echo ""
+    else
+        echo "   Keeping current settings."
+        echo ""
+    fi
+else
+    read_existing_settings
+    if [ "$EXISTING_SETTINGS_FOUND" = "1" ]; then
+        echo "⚙️  Configuration (Press Enter at any step to keep current values)"
+    else
+        echo "⚙️  Configuration (Press Enter at any step to use the default settings)"
+    fi
     echo ""
     echo "   At what battery levels would you like to be notified?"
     echo "   (Example: '20,15,10' means you get an alert at 20%, again at 15%, etc.)"
-    read -p "   Battery thresholds (default: $DEFAULT_THRESHOLDS): " USER_THRESHOLDS
-    USER_THRESHOLDS=${USER_THRESHOLDS:-$DEFAULT_THRESHOLDS}
-    
-    echo ""
-    echo "   How often should the background task silently check your mouse?"
-    echo "   (Example: 600 seconds = 10 minutes)"
-    read -p "   Check interval in seconds (default: $DEFAULT_INTERVAL): " USER_INTERVAL
-    if [[ ! "$USER_INTERVAL" =~ ^[0-9]+$ ]]; then
-        USER_INTERVAL=$DEFAULT_INTERVAL
+    if [ -t 0 ]; then
+        if [ "$EXISTING_SETTINGS_FOUND" = "1" ]; then
+            read -p "   Battery thresholds (current: $USER_THRESHOLDS): " NEW_THRESHOLDS
+        else
+            read -p "   Battery thresholds (default: $DEFAULT_THRESHOLDS): " NEW_THRESHOLDS
+        fi
+        USER_THRESHOLDS=${NEW_THRESHOLDS:-$USER_THRESHOLDS}
+
+        echo ""
+        echo "   How often should the background task silently check your mouse?"
+        echo "   (Example: 600 seconds = 10 minutes)"
+        if [ "$EXISTING_SETTINGS_FOUND" = "1" ]; then
+            read -p "   Check interval in seconds (current: $USER_INTERVAL): " NEW_INTERVAL
+        else
+            read -p "   Check interval in seconds (default: $DEFAULT_INTERVAL): " NEW_INTERVAL
+        fi
+        if [[ "$NEW_INTERVAL" =~ ^[0-9]+$ ]]; then
+            USER_INTERVAL=$NEW_INTERVAL
+        fi
+        echo ""
+        echo "   Should the script automatically check for new versions in the background?"
+        if [ "$EXISTING_SETTINGS_FOUND" = "1" ]; then
+            read -p "   Automatic update checks 1=enabled, 0=disabled (current: $USER_AUTO_UPDATE_CHECK): " NEW_AUTO_UPDATE_CHECK
+        else
+            read -p "   Automatic update checks 1=enabled, 0=disabled (default: $DEFAULT_AUTO_UPDATE_CHECK): " NEW_AUTO_UPDATE_CHECK
+        fi
+        if [ "$NEW_AUTO_UPDATE_CHECK" = "0" ] || [ "$NEW_AUTO_UPDATE_CHECK" = "1" ]; then
+            USER_AUTO_UPDATE_CHECK=$NEW_AUTO_UPDATE_CHECK
+        fi
+        echo ""
+        echo "   How often should it check for new versions?"
+        if [ "$EXISTING_SETTINGS_FOUND" = "1" ]; then
+            read -p "   Update check interval in seconds (current: $USER_UPDATE_CHECK_INTERVAL): " NEW_UPDATE_CHECK_INTERVAL
+        else
+            read -p "   Update check interval in seconds (default: $DEFAULT_UPDATE_CHECK_INTERVAL): " NEW_UPDATE_CHECK_INTERVAL
+        fi
+        if [[ "$NEW_UPDATE_CHECK_INTERVAL" =~ ^[0-9]+$ ]]; then
+            USER_UPDATE_CHECK_INTERVAL=$NEW_UPDATE_CHECK_INTERVAL
+        fi
+        echo ""
+    else
+        echo "   Non-interactive mode detected. Keeping existing/default settings."
+        echo ""
     fi
-    echo ""
-else
-    USER_THRESHOLDS=$DEFAULT_THRESHOLDS
-    USER_INTERVAL=$DEFAULT_INTERVAL
 fi
 
 # ── Step 1: Create the checker script ─────────────────────────────────────────
@@ -57,13 +248,72 @@ cat > "$SCRIPT_PATH" << 'EOF'
 # macOS notifications as battery drops through configurable thresholds.
 # Detection: system_profiler (Minor Type == Mouse) + ioreg (BatteryPercent)
 
+SCRIPT_VERSION="__SCRIPT_VERSION__"
 BATTERY_THRESHOLDS=${BATTERY_THRESHOLDS:-"20,15,10"}
 STATE_DIR="/tmp/magic-mouse-battery-monitor"
+AUTO_UPDATE_CHECK=${AUTO_UPDATE_CHECK:-"1"}
+UPDATE_CHECK_INTERVAL=${UPDATE_CHECK_INTERVAL:-86400}
+RELEASE_MANIFEST_URL="https://raw.githubusercontent.com/mmihalev/magic-mouse-battery-monitor/main/.release-please-manifest.json"
+UPDATE_CHECK_STATE_FILE="$STATE_DIR/update-last-check"
+UPDATE_NOTIFIED_VERSION_FILE="$STATE_DIR/update-last-notified-version"
 
 mkdir -p "$STATE_DIR"
 
+collect_installed_settings_for_update() {
+    local plist_path
+    plist_path="$HOME/Library/LaunchAgents/com.user.magic-mouse-battery-monitor.plist"
+    MMBM_USER_THRESHOLDS=""
+    MMBM_USER_INTERVAL=""
+    MMBM_USER_AUTO_UPDATE_CHECK=""
+    MMBM_USER_UPDATE_CHECK_INTERVAL=""
+    [ -f "$plist_path" ] || return
+
+    MMBM_USER_THRESHOLDS=$(/usr/libexec/PlistBuddy -c "Print :EnvironmentVariables:BATTERY_THRESHOLDS" "$plist_path" 2>/dev/null || true)
+    MMBM_USER_INTERVAL=$(/usr/libexec/PlistBuddy -c "Print :StartInterval" "$plist_path" 2>/dev/null || true)
+    MMBM_USER_AUTO_UPDATE_CHECK=$(/usr/libexec/PlistBuddy -c "Print :EnvironmentVariables:AUTO_UPDATE_CHECK" "$plist_path" 2>/dev/null || true)
+    MMBM_USER_UPDATE_CHECK_INTERVAL=$(/usr/libexec/PlistBuddy -c "Print :EnvironmentVariables:UPDATE_CHECK_INTERVAL" "$plist_path" 2>/dev/null || true)
+}
+
+if [ "$1" = "version" ] || [ "$1" = "--version" ] || [ "$1" = "-v" ]; then
+    echo "check_magic_mouse_battery.sh $SCRIPT_VERSION"
+    exit 0
+fi
+
 if [ "$1" = "update" ]; then
     echo "🔄 Checking for updates..."
+    latest_version=$(curl -fsSL "$RELEASE_MANIFEST_URL" 2>/dev/null | python3 -c '
+import json, sys
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    sys.exit(1)
+v = data.get(".")
+if isinstance(v, str) and v.strip():
+    print(v.strip())
+')
+    if [ -n "$latest_version" ]; then
+        is_newer=$(python3 - "$latest_version" "$SCRIPT_VERSION" << 'PYEOF'
+import re, sys
+latest = sys.argv[1]
+current = sys.argv[2]
+
+def parse(v):
+    base = re.split(r'[-+]', v, maxsplit=1)[0]
+    parts = [int(p) for p in base.split('.') if p.isdigit()]
+    return tuple(parts)
+
+try:
+    print(1 if parse(latest) > parse(current) else 0)
+except Exception:
+    print(0)
+PYEOF
+)
+        if [ "$is_newer" != "1" ]; then
+            echo "✅ Already up to date (installed: $SCRIPT_VERSION, latest: $latest_version)."
+            exit 0
+        fi
+    fi
+
     UPDATE_URL="https://raw.githubusercontent.com/mmihalev/magic-mouse-battery-monitor/main/install.sh"
     CHECKSUM_URL="https://raw.githubusercontent.com/mmihalev/magic-mouse-battery-monitor/main/install.sh.sha256"
     TMP_INSTALL="/tmp/magic-mouse-battery-monitor-install.sh"
@@ -82,7 +332,12 @@ if [ "$1" = "update" ]; then
             echo "✅ Downloaded update is authentic and verified (SHA-256 match)."
             chmod +x "$TMP_INSTALL"
             echo "🚀 Running installer..."
-            exec "$TMP_INSTALL"
+            collect_installed_settings_for_update
+            MMBM_USER_THRESHOLDS="$MMBM_USER_THRESHOLDS" \
+            MMBM_USER_INTERVAL="$MMBM_USER_INTERVAL" \
+            MMBM_USER_AUTO_UPDATE_CHECK="$MMBM_USER_AUTO_UPDATE_CHECK" \
+            MMBM_USER_UPDATE_CHECK_INTERVAL="$MMBM_USER_UPDATE_CHECK_INTERVAL" \
+            exec "$TMP_INSTALL" update
         else
             echo "❌ Error: Downloaded file failed SHA-256 verification. Update aborted."
             echo "   Expected: $EXPECTED_SHA"
@@ -95,6 +350,97 @@ if [ "$1" = "update" ]; then
         exit 1
     fi
 fi
+
+# Refresh runtime settings from LaunchAgent when running manually so update
+# command reflects current configured values instead of shell defaults.
+load_settings_from_launchagent() {
+    local plist_path thresholds auto_update update_interval
+    plist_path="$HOME/Library/LaunchAgents/com.user.magic-mouse-battery-monitor.plist"
+    [ -f "$plist_path" ] || return
+
+    thresholds=$(/usr/libexec/PlistBuddy -c "Print :EnvironmentVariables:BATTERY_THRESHOLDS" "$plist_path" 2>/dev/null || true)
+    auto_update=$(/usr/libexec/PlistBuddy -c "Print :EnvironmentVariables:AUTO_UPDATE_CHECK" "$plist_path" 2>/dev/null || true)
+    update_interval=$(/usr/libexec/PlistBuddy -c "Print :EnvironmentVariables:UPDATE_CHECK_INTERVAL" "$plist_path" 2>/dev/null || true)
+
+    if [ -n "$thresholds" ]; then
+        BATTERY_THRESHOLDS="$thresholds"
+    fi
+    if [ "$auto_update" = "0" ] || [ "$auto_update" = "1" ]; then
+        AUTO_UPDATE_CHECK="$auto_update"
+    fi
+    if [[ "$update_interval" =~ ^[0-9]+$ ]]; then
+        UPDATE_CHECK_INTERVAL="$update_interval"
+    fi
+}
+
+load_settings_from_launchagent
+
+get_latest_release_version() {
+    curl -fsSL "$RELEASE_MANIFEST_URL" 2>/dev/null | python3 -c '
+import json, sys
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    sys.exit(1)
+v = data.get(".")
+if isinstance(v, str) and v.strip():
+    print(v.strip())
+'
+}
+
+is_version_newer() {
+    python3 - "$1" "$2" << 'PYEOF'
+import re, sys
+latest = sys.argv[1]
+current = sys.argv[2]
+
+def parse(v):
+    # Keep numeric semantic parts only (e.g., 1.2.3 from 1.2.3-beta)
+    base = re.split(r'[-+]', v, maxsplit=1)[0]
+    parts = [int(p) for p in base.split('.') if p.isdigit()]
+    return tuple(parts)
+
+try:
+    print(1 if parse(latest) > parse(current) else 0)
+except Exception:
+    print(0)
+PYEOF
+}
+
+auto_check_for_updates() {
+    [ "$AUTO_UPDATE_CHECK" = "1" ] || return
+    if ! [[ "$UPDATE_CHECK_INTERVAL" =~ ^[0-9]+$ ]]; then
+        UPDATE_CHECK_INTERVAL=86400
+    fi
+
+    local now last_check latest notified newer
+    now=$(date +%s)
+    last_check=0
+    [ -f "$UPDATE_CHECK_STATE_FILE" ] && last_check=$(cat "$UPDATE_CHECK_STATE_FILE" 2>/dev/null || echo 0)
+    if ! [[ "$last_check" =~ ^[0-9]+$ ]]; then
+        last_check=0
+    fi
+
+    if [ $((now - last_check)) -lt "$UPDATE_CHECK_INTERVAL" ]; then
+        return
+    fi
+
+    echo "$now" > "$UPDATE_CHECK_STATE_FILE"
+    latest=$(get_latest_release_version || true)
+    [ -n "$latest" ] || return
+
+    newer=$(is_version_newer "$latest" "$SCRIPT_VERSION")
+    [ "$newer" = "1" ] || return
+
+    notified=""
+    [ -f "$UPDATE_NOTIFIED_VERSION_FILE" ] && notified=$(cat "$UPDATE_NOTIFIED_VERSION_FILE" 2>/dev/null || true)
+    [ "$notified" = "$latest" ] && return
+
+    osascript -e "display notification \"A new version ($latest) is available. Run ~/.local/bin/check_magic_mouse_battery.sh update\" with title \"Magic Mouse Battery Monitor Update\" sound name \"Sosumi\""
+    echo "$latest" > "$UPDATE_NOTIFIED_VERSION_FILE"
+}
+
+auto_check_for_updates
 
 get_connected_mice() {
     python3 << 'PYEOF'
@@ -170,6 +516,7 @@ get_connected_mice | while IFS='|' read -r name address; do
 done
 EOF
 
+sed -i '' "s/__SCRIPT_VERSION__/$SCRIPT_VERSION/g" "$SCRIPT_PATH"
 chmod +x "$SCRIPT_PATH"
 echo "   Script saved to: $SCRIPT_PATH"
 echo ""
@@ -277,6 +624,10 @@ cat > "$PLIST_DEST" << EOF
     <dict>
         <key>BATTERY_THRESHOLDS</key>
         <string>$USER_THRESHOLDS</string>
+        <key>AUTO_UPDATE_CHECK</key>
+        <string>$USER_AUTO_UPDATE_CHECK</string>
+        <key>UPDATE_CHECK_INTERVAL</key>
+        <string>$USER_UPDATE_CHECK_INTERVAL</string>
     </dict>
     <key>StartInterval</key>
     <integer>$USER_INTERVAL</integer>
@@ -302,6 +653,11 @@ echo "✅ Setup complete!"
 echo ""
 echo "   Monitor is now running silently in the background."
 echo "   It checks the battery every $(( USER_INTERVAL / 60 )) minutes and uses thresholds: $USER_THRESHOLDS%"
+if [ "$USER_AUTO_UPDATE_CHECK" = "1" ]; then
+    echo "   Automatic update checks are enabled (every $USER_UPDATE_CHECK_INTERVAL seconds)."
+else
+    echo "   Automatic update checks are disabled."
+fi
 echo ""
 echo "📝 To configure thresholds or interval, edit:"
 echo "   $PLIST_DEST"

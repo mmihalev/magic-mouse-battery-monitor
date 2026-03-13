@@ -43,6 +43,8 @@ The background timer is managed via a macOS LaunchAgent. To configure the thresh
 | Setting | Key | Default | Example |
 |---------|-----|---------|---------|
 | **Thresholds** | `BATTERY_THRESHOLDS` | `20,15,10` | `30,20,10,5` |
+| **Auto Update Check** | `AUTO_UPDATE_CHECK` | `1` | `0` |
+| **Update Check Interval** | `UPDATE_CHECK_INTERVAL` | `86400` | `21600` |
 | **Interval** | `StartInterval` | `600` (10 min) | `300` (5 min) |
 
 After editing the file, reload the LaunchAgent to apply the changes:
@@ -64,7 +66,21 @@ You can update the background script to the latest version by running the update
 ```bash
 ~/.local/bin/check_magic_mouse_battery.sh update
 ```
-This will automatically download, verify, and apply the latest script from the main branch.
+This will automatically download, verify, and apply the latest installer from the main branch.
+During update, your current thresholds and interval are preserved by default, and the installer asks whether you want to change them.
+
+The script also checks for updates automatically in the background (once every 24 hours by default) and shows a notification when a newer version is available.
+
+When `install.sh` runs, it also checks the latest available project version from GitHub and prints a status line (up to date/newer available/unavailable).
+
+To print the currently installed script version:
+```bash
+~/.local/bin/check_magic_mouse_battery.sh --version
+```
+
+Automatic update-check behavior can be tuned with environment variables:
+- `AUTO_UPDATE_CHECK=1` (default) enables background update checks, `0` disables them.
+- `UPDATE_CHECK_INTERVAL=86400` (default, seconds) controls how often update checks run.
 
 ## Uninstallation
 
