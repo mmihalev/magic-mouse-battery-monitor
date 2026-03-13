@@ -43,7 +43,7 @@ To install, simply run:
 ```
 
 During installation, the script will:
-1. Extract the core battery checker logic and save it to `~/.local/bin/check_magic_mouse_battery.sh`.
+1. Extract the core battery checker logic and save it to `~/.local/bin/magic-mouse-battery-monitor.sh`.
 2. Open Shortcuts.app and provide instructions (with a pre-copied command) to create the "Mouse Battery Monitor" shortcut.
 3. Automatically generate and load the background macOS `LaunchAgent` to run the shortcut automatically every 10 minutes.
 
@@ -78,7 +78,7 @@ Since the checking logic is wrapped in a macOS Shortcut, you can trigger a batte
 
 You can update the background script to the latest version by running the update command from your terminal:
 ```bash
-~/.local/bin/check_magic_mouse_battery.sh update
+~/.local/bin/magic-mouse-battery-monitor.sh update
 ```
 This will automatically download, verify, and apply the latest installer from the main branch.
 During update, your current thresholds and interval are preserved by default, and the installer asks whether you want to change them.
@@ -89,7 +89,7 @@ When `install.sh` runs, it also checks the latest available project version from
 
 To print the currently installed script version:
 ```bash
-~/.local/bin/check_magic_mouse_battery.sh --version
+~/.local/bin/magic-mouse-battery-monitor.sh --version
 ```
 
 Automatic update-check behavior can be tuned with environment variables:
@@ -103,4 +103,4 @@ To remove the background task, run:
 launchctl unload ~/Library/LaunchAgents/com.user.magic-mouse-battery-monitor.plist
 rm ~/Library/LaunchAgents/com.user.magic-mouse-battery-monitor.plist
 ```
-*(You can also optionally delete the Shortcut from the Shortcuts.app and remove the script from `~/.local/bin/check_magic_mouse_battery.sh`)*
+*(You can also optionally delete the Shortcut from the Shortcuts.app and remove the script from `~/.local/bin/magic-mouse-battery-monitor.sh`.)*

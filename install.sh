@@ -12,7 +12,8 @@ set -e
 
 # Configurable settings for the setup
 INSTALL_DIR="$HOME/.local/bin"
-SCRIPT_PATH="$INSTALL_DIR/check_magic_mouse_battery.sh"
+SCRIPT_NAME="magic-mouse-battery-monitor.sh"
+SCRIPT_PATH="$INSTALL_DIR/$SCRIPT_NAME"
 PLIST_NAME="com.user.magic-mouse-battery-monitor.plist"
 PLIST_DEST="$HOME/Library/LaunchAgents/$PLIST_NAME"
 SHORTCUT_NAME="Mouse Battery Monitor"
@@ -275,7 +276,7 @@ collect_installed_settings_for_update() {
 }
 
 if [ "$1" = "version" ] || [ "$1" = "--version" ] || [ "$1" = "-v" ]; then
-    echo "check_magic_mouse_battery.sh $SCRIPT_VERSION"
+    echo "magic-mouse-battery-monitor.sh $SCRIPT_VERSION"
     exit 0
 fi
 
@@ -436,7 +437,7 @@ auto_check_for_updates() {
     [ -f "$UPDATE_NOTIFIED_VERSION_FILE" ] && notified=$(cat "$UPDATE_NOTIFIED_VERSION_FILE" 2>/dev/null || true)
     [ "$notified" = "$latest" ] && return
 
-    osascript -e "display notification \"A new version ($latest) is available. Run ~/.local/bin/check_magic_mouse_battery.sh update\" with title \"Magic Mouse Battery Monitor Update\" sound name \"Sosumi\""
+    osascript -e "display notification \"A new version ($latest) is available. Run ~/.local/bin/magic-mouse-battery-monitor.sh update\" with title \"Magic Mouse Battery Monitor Update\" sound name \"Sosumi\""
     echo "$latest" > "$UPDATE_NOTIFIED_VERSION_FILE"
 }
 
@@ -519,19 +520,35 @@ EOF
 sed -i '' "s/__SCRIPT_VERSION__/$SCRIPT_VERSION/g" "$SCRIPT_PATH"
 chmod +x "$SCRIPT_PATH"
 echo "   Script saved to: $SCRIPT_PATH"
+# Remove old script name if it exists.
+rm -f "$INSTALL_DIR/check_magic_mouse_battery.sh"
 echo ""
 
 
 # ── Step 2: Create the Shortcut ─────────────────────────────────────────────
+REFRESH_SHORTCUT=1
 if shortcuts list 2>/dev/null | grep -qF "$SHORTCUT_NAME"; then
-    echo "✅ Shortcut \"$SHORTCUT_NAME\" already exists."
+    echo "📱 Step 2: Refresh the Shortcut"
+    echo "   Shortcut \"$SHORTCUT_NAME\" already exists."
+    if [ -t 0 ]; then
+        read -p "   Refresh it now to ensure script path is up to date? [Y/n]: " REFRESH_CHOICE
+        if [ "$REFRESH_CHOICE" = "n" ] || [ "$REFRESH_CHOICE" = "N" ]; then
+            REFRESH_SHORTCUT=0
+        fi
+    else
+        REFRESH_SHORTCUT=0
+        echo "   Non-interactive mode detected. Keeping existing Shortcut."
+    fi
 else
     echo "📱 Step 2: Create the Shortcut"
+fi
+
+if [ "$REFRESH_SHORTCUT" = "1" ]; then
     echo "   Generating Shortcut file..."
-    
+
     SHORTCUT_PLIST="/tmp/MouseBatteryMonitor.plist"
     SHORTCUT_FILE="/tmp/Mouse Battery Monitor.shortcut"
-    
+
     cat > "$SHORTCUT_PLIST" << EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -583,12 +600,16 @@ EOF
     echo "  3. Click the 'Advanced' tab"
     echo "  4. Check the box for 'Allow Running Scripts'"
     echo ""
-    echo "  Please click 'Add Shortcut' to import it, then return here."
+    if shortcuts list 2>/dev/null | grep -qF "$SHORTCUT_NAME"; then
+        echo "  Please click 'Replace' to update it, then return here."
+    else
+        echo "  Please click 'Add Shortcut' to import it, then return here."
+    fi
     echo ""
     
     open "$SHORTCUT_FILE"
     
-    read -p "   Press [Enter] once you've added the Shortcut..."
+    read -p "   Press [Enter] once you've completed the import..."
     echo ""
 
     if shortcuts list 2>/dev/null | grep -qF "$SHORTCUT_NAME"; then
