@@ -31,6 +31,12 @@ Executing the display module via the **Shortcuts app** solves this because Short
 
 We have consolidated everything into a single, easy-to-use installer script that sets up the background agent and guides you through the Shortcut creation.
 
+### One-Command Install (curl)
+```bash
+curl -fsSL https://raw.githubusercontent.com/mmihalev/magic-mouse-battery-monitor/main/install.sh | bash
+```
+
+### Install from local clone
 To install, simply run:
 ```bash
 ./install.sh
